@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <link rel="stylesheet" href="https://code.getmdl.io/1.2.1/material.indigo-pink.min.css" id="dStyleSheet" />
+    <link href="https://fonts.googleapis.com/css?family=Roboto:regular,bold,italic,thin,light,bolditalic,black,medium&amp;lang=en" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <script src="https://code.jquery.com/jquery-1.12.4.min.js"></script>
+    <script defer src="https://code.getmdl.io/1.2.1/material.min.js"></script>
+    <style>
+        .mdl-grid{
+            max-width: 1900px!important;
+        }
+        .mdl-layout__content {
+            overflow-y: auto!important;
+        }
+        .mdl-typography--headline{
+            padding: 10px;
+            color: white;
+        }
+        .hide{display:none;}
+        .active, .active p, .active span{
+            color: rgba(0,0,0,.86);
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+<div class="mdl-layout mdl-js-layout mdl-layout--fixed-header">
+    <header class="mdl-layout__header mdl-layout__header--waterfall">
+        <div class="mdl-layout__header-row">
+            <span class="mdl-layout-title mdl-layout-spacer">Calendar Updater</span>
+        </div>
+    </header>
+    <div class="mdl-layout__content">
+        <div class="mdl-grid">
+            <div class="hide mdl-card mdl-cell mdl-cell--8-col mdl-shadow--2dp" id="dAuthorise">
+                <div class="mdl-typography--headline mdl-color--primary">Please click to authorise</div>
+                <div class="mdl-card__supporting-text">You need to tell Google that you are happy about this.</div>
+                <div class="mdl-card__actions">
+                    <button id="authorize-button" onclick="handleAuthClick(event)">Authorize</button>
+                </div>
+            </div>
+            <div class="hide mdl-card mdl-cell mdl-cell--8-col mdl-shadow--2dp" id="dOwner">
+                <div class="mdl-typography--headline mdl-color--primary">Sorry</div>
+                <div class="mdl-card__supporting-text">Sorry, but we cannot find the calendars associated with this owner.</div>
+            </div>
+            <div class="mdl-card mdl-cell mdl-cell--8-col mdl-shadow--2dp">
+                <div class="mdl-typography--headline mdl-color--primary">Control Panel</div>
+                <div class="mdl-card__supporting-text active" id="mWait">Wait for both boxes below to fill in. Equine Affairs can take up to 2 minutes.</div>
+                <div class="mdl-card__supporting-text hide active" id="mClick">Click the Compare button to match the Equine Affairs entries with the Google Calendar entries. It is looking for a match on Start Date and URL - the description doesn't matter.</div>
+                <div class="mdl-card__supporting-text hide active" id="mClickButton">
+                    <button class="mdl-button mdl-js-button mdl-button--raised mdl-button--colored" onclick="goCompare();">Compare</button>
+                </div>
+                <div class="mdl-card__supporting-text hide active" id="mMatches">
+                    <p>We found that <span id='nMatches'>x</span> Equine Affairs items were already in the Google Calendar. They have been removed from the display.</p>
+                    <p>We found that <span id='nMoves'>x</span> Equine Affairs items need to be moved to the Google Calendar.</p>
+                </div>
+                <div class="mdl-card__supporting-text hide active" id="mCreate">
+                    <button class="mdl-button mdl-js-button mdl-button--raised mdl-button--colored" onclick="createEvents();">Create 0 events</button>
+                </div>
+                <div class="mdl-card__supporting-text hide" id="mResults"></div>
+            </div>
+            <div class="mdl-card mdl-cell mdl-cell--4-col mdl-shadow--2dp">
+                <div class="mdl-typography--headline mdl-color--primary">Settings</div>
+                <div class="mdl-card__supporting-text" id="dSettings">
+                    <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
+                        <input class="mdl-textfield__input" type="number" id="nEvents" required value="50">
+                        <label class="mdl-textfield__label" for="nEvents">Max no of events to be created at one time</label>
+                        <span class="mdl-textfield__error">Input is not a number!</span>
+                    </div>
+                </div>
+            </div>
+            <div class="mdl-card mdl-cell mdl-cell--6-col mdl-shadow--2dp">
+                <div class="mdl-typography--headline mdl-color--primary">Equine Affairs (<span id="dEA_count">0</span> items)</div>
+                <div class="mdl-card__supporting-text" id="dEA">
+                    <div class="mdl-spinner mdl-js-spinner is-active"></div>
+                </div>
+            </div>
+            <div class="mdl-card mdl-cell mdl-cell--6-col mdl-shadow--2dp">
+                <div class="mdl-typography--headline mdl-color--primary">Google Calendar (<span id="dG_count">0</span> items)</div>
+                <div class="mdl-card__supporting-text" id="dG"></div>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+    var settings={}
+    var labels = {};
+    $(document).ready(function (){
+        $.post('getSettings.php'
+            ,{owner: getParameters('owner','bicton')}
+            ,function(data){
+                if(!data) {
+                    $('.mdl-grid > div').addClass('hide');
+                    $('#dOwner').removeClass('hide');
+                }
+                else{
+                    settings = data;
+                    settings.maxAdditions=$('#nEvents').val();
+                    settings.events_to_create = {};
+                    $('header .mdl-layout-title').html('Calendar Updater: ' + settings.preamble)
+                    componentHandler.upgradeDom();
+                    // Attach Google Calendar API dynamically
+                    var script_tag = document.createElement('script');
+                    script_tag.setAttribute("type","text/javascript");
+                    script_tag.setAttribute("src","https://apis.google.com/js/client.js?onload=checkAuth");
+                    (document.getElementsByTagName("head")[0] || document.documentElement).appendChild(script_tag);
+                }
+            },'json');
+    });
+    $(document).on('change','#nEvents', function(e){
+        settings.maxAdditions=$('#nEvents').val();
+    });
+    $(document).on('change','.tfSetting', function(e){
+        var thisInput = $(this);
+        var newLabel = thisInput.val();
+        var thisLabel = thisInput.parent().find('label')[0].innerText;
+        labels[thisLabel] = newLabel;
+        $.each(settings.events_to_create,function(a,b){
+            if(b.title == thisLabel && newLabel !== thisLabel){
+                b.title=newLabel;
+                $('#dEA div').each(function(c,d){
+                    var thisDiv = $(this);
+                    if(!thisDiv.hasClass('hide')&&thisDiv.attr('data-id')==a){
+                        $('span.eventTitle',thisDiv).html(newLabel);
+                    }
+                })
+            }
+        })
+    });
+    // ==================================================== Fetch Equine Affairs
+    function gatherEA(){       
+        $.ajax({
+            url: settings.yql_url,
+            type: 'GET',
+            success: function(res) {
+                $('#dEA').html('');
+                if(res.query.results==null){
+                    $('#dEA').html('Sorry, but we were unable to retrieve the Equine Affairs Calendar at this time.');
+                } else {
+                    var form = $(res.query.results.body.form);
+                    var y = form[0]['div'];
+                    var tab = y[2]['table'][0];
+                    var tbody = tab['tbody'];
+                    var eID = 0;
+                    var now = new Date();
+                    $(tbody['tr']).each(function(b,c){
+                        if(c.class=="visible-sm visible-md visible-lg") {
+                            eID++;
+                            var row = c['td'];
+                            var event = {}
+                            event.dateFrom=parseDate(row[1]);
+                            event.dateTo=parseDate(row[2]);
+                            event.title=row[3]['a']['content'];
+                            var len = (settings.preamble).length;
+                            if(event.title.substring(0,len)==settings.preamble) event.title=event.title.substring(len + 1);
+                            event.url='https://www.equineaffairs.com' + row[3]['a']['href'];
+                            if(strToDate(event.dateFrom) >= now) {
+                                writeResult($('#dEA'),event,eID);
+                            }
+                        }
+                    })
+                    activateComparison();
+                }
+            }
+        });
+    }
+    // =============================================================== Utilities
+    function parseDate(iString){
+        // Equine Affairs Date string (which has no year) to yyyy-mm-dd
+        var now = new Date();
+        var cutoff = now.setDate(now.getDate() - 10);
+        cutoff = new Date (cutoff);
+        var parts =iString.split(' ');
+        var months = {}
+        months["Jan"]=0;
+        months["Feb"]=1;
+        months["Mar"]=2;
+        months["Apr"]=3;
+        months["May"]=4;
+        months["Jun"]=5;
+        months["Jul"]=6;
+        months["Aug"]=7;
+        months["Sep"]=8;
+        months["Oct"]=9;
+        months["Nov"]=10;
+        months["Dec"]=11;
+        var oString = new Date(now.getFullYear(),months[parts[2]],parts[1]);
+        if( oString < cutoff) oString = new Date((now.getFullYear())+1,months[parts[2]],parts[1]);
+        oString=getGMTDate(oString);
+        return oString;
+    }
+    function writeResult(domObject,event,ID){
+        var div = $('<div />');
+        div.attr('data-id',ID);
+        div.attr('data-event',JSON.stringify(event));
+        div.append(event.dateFrom);
+        if(event.dateFrom!==event.dateTo){
+            div.append('<br>')
+               .append(event.dateTo)
+        }
+        var span = $('<span />').addClass('eventTitle').html(event.title);
+        div.append('<br>')
+           .append(span)
+           .append('<br>')
+           .append(event.url)
+           .append('<br><br>');
+        domObject.append(div);
+        var id = domObject.attr('id')+'_count';
+        var cnt = $('#'+id).html();
+        $('#'+id).html(parseInt(cnt)+1);
+        domObject.attr('data-loaded','Y');
+     }
+    function activateComparison(){
+        if($('#dEA').attr('data-loaded')=='Y' &&
+           $('#dG').attr('data-loaded')=='Y'){
+            deactivateAllVisibleMessages();
+            $('#mClick').removeClass('hide');
+            $('#mClickButton').removeClass('hide');
+        }
+    }
+    function strToDate(iDate){
+        // yyyy-mm-dd to Date
+        try{
+            if(iDate==''||iDate==null) return null;
+            var parts = iDate.split('-');
+            if(parts[2].length=='26T17:00:00+01:00'.length){
+                parts[2] = (parts[2]).substring(0,2);
+            }
+            if(parts[2].length=='2T17:00:00+01:00'.length){
+                parts[2] = (parts[2]).substring(0,1);
+            }
+            var d = new Date(parts[0], parts[1]-1, parts[2]);
+            return d;
+        } catch(err){
+            return null;
+        }
+    }
+    function dateOnly(iDate){
+        if(iDate==''||iDate==null) return iDate;
+        var d = getGMTDate(strToDate(iDate));
+        return d;
+    }
+    function alterDateTo(iFrom,iTo){
+        try {
+            if(iTo==''||iTo==null) return iFrom;
+            var vMessage='';
+            var dFrom = strToDate(iFrom);
+            var dTo = strToDate(iTo);
+            if(getGMTDate(dFrom)==getGMTDate(dTo)){
+                return dateOnly(iTo);
+            }
+            else{
+                var dTo2 = dTo.setDate(dTo.getDate() - 1);
+                dTo = new Date(dTo2);
+                dTo = getGMTDate(dTo);
+                return dTo;
+            }
+        }
+        catch(err) {
+            return iTo;
+        }
+    }
+    function alterDate(iDate,iDays){
+        var dDate = strToDate(iDate);
+        var dDate2 = dDate.setDate(dDate.getDate() + iDays);
+        dDate = new Date(dDate2);
+        return getGMTDate(dDate);
+    }
+    function getGMTDate(iDate){
+        function pad(s) { return (s < 10) ? '0' + s : s; }
+        return [iDate.getFullYear()
+               ,pad(iDate.getMonth()+1)
+               ,pad(iDate.getDate())
+               ].join('-');
+    }
+    function getParameters (vName,vDefault){return 'owned';}
+    // =================================================== Fetch Google Calendar
+    function checkAuth() {
+        gapi.auth.authorize({'client_id': settings.google_client_id
+                            ,'scope': settings.google_scope
+                            ,'immediate': true
+                            }, handleAuthResult);
+    }
+    function handleAuthResult(authResult) {
+        if (authResult && !authResult.error) {
+            loadCalendarApi();
+        } else {
+            $('.mdl-grid > div').addClass('hide');
+            $('#dAuthorise').removeClass('hide');
+        }
+    }
+    function handleAuthClick(event) {
+        gapi.auth.authorize(
+            {client_id: settings.google_client_id
+            ,scope: [settings.google_scope]
+            ,immediate: false},
+                handleAuthResult);
+        return false;
+      }
+    function loadCalendarApi() {
+        $('#dG').html('');
+        gapi.client.load('calendar', 'v3', listUpcomingEvents);
+    }
+    function listUpcomingEvents() {
+        var request = gapi.client.calendar.events.list({
+          'calendarId': settings.google_calendar_id,
+          'timeMin': (new Date()).toISOString(),
+          'showDeleted': false,
+          'singleEvents': true,
+          'maxResults': 1000,
+          'orderBy': 'startTime'
+        });
+        var eID = 0;
+        request.execute(function(resp) {
+            var events = resp.items;
+            if (events.length > 0) {
+                for (i = 0; i < events.length; i++) {
+                    var event = events[i];
+                    eID++;
+                    var oEvent={}
+                    oEvent.title=event.summary;
+                    oEvent.url = event.description;
+                    oEvent.dateFrom = event.start.dateTime;
+                    if (!oEvent.dateFrom) {oEvent.dateFrom = event.start.date;}
+                    oEvent.dateFrom=dateOnly(oEvent.dateFrom);
+                    oEvent.dateTo = event.end.dateTime;
+                    if (!oEvent.dateTo) {oEvent.dateTo = event.end.date;}
+                    oEvent.dateTo=alterDateTo(oEvent.dateFrom,oEvent.dateTo);
+                    oEvent.title=event.summary;
+                    oEvent.url = event.description;
+                    writeResult($('#dG'),oEvent,eID);
+                }
+                activateComparison();
+            }
+            else {
+                $('#dG').attr('data-loaded','Y');
+                $('#dG').append('No upcoming events found.');
+                activateComparison();
+            }
+
+        });
+        gatherEA();
+    }
+    // ===================================================== Compare and resolve
+    function goCompare(){
+        var eEvents = [];
+        $('#dEA div').each(function(a,b){
+            eEvents[$(this).attr('data-id')]=JSON.parse($(this).attr('data-event'));
+        })
+        var gEvents = [];
+        $('#dG div').each(function(a,b){
+            gEvents[$(this).attr('data-id')]=JSON.parse($(this).attr('data-event'));
+        })
+        var cMatched = 0;
+        $.each(eEvents,function(a,eEvent){
+            if(eEvent){
+                var matched=false,gID;
+                $.each(gEvents,function(x,gEvent){
+                    if(gEvent && gEvent.dateFrom==eEvent.dateFrom & gEvent.url==eEvent.url){
+                        matched=true;
+                        gID=x;
+                        $('#dEA div[data-id="' + a + '"]').addClass('matched');
+                        $('#dG div[data-id="' + x + '"]').addClass('matched');
+                    }
+                });
+                if(!matched) {
+                    eEvent.dateTo=alterDate(eEvent.dateTo,1);
+                    settings.events_to_create[a]=eEvent;
+                    labels[eEvent.title]=eEvent.title;
+                }
+                else{
+                    cMatched++;
+                    $('#dEA_count').html(parseInt($('#dEA_count').html())-1);
+                    $('#dG_count').html(parseInt($('#dG_count').html())-1);
+                    $('#dEA div[data-id="' + a + '"]').addClass('hide');
+                    $('#dG div[data-id="' + gID + '"]').addClass('hide');
+                }
+            }
+        })
+        deactivateAllVisibleMessages();
+        $('#mClickButton').addClass('hide');
+        var nWorklist = Object.keys(settings.events_to_create).length;
+        $('#nMatches').html(cMatched);
+        $('#nMoves').html(nWorklist);
+        $('#mMatches').removeClass('hide');
+        if(nWorklist > 0){
+            var x = settings.maxAdditions;
+            if(nWorklist < x) x = nWorklist;
+            $('#mCreate').removeClass('hide');
+            $('#mCreate button').html('Create ' + x + ' events');
+            if(x==1) $('#mCreate button').html('Create ' + x + ' event');
+            $.each(labels,function(a,b){
+                $('#dSettings').append(createTextField(a));
+            })
+            componentHandler.upgradeDom();
+        }
+    }
+    function createEvents(){
+        $('#mCreate').addClass('hide');
+        var c = 0;
+        var nEventsToCreate = Object.keys(settings.events_to_create).length
+        var allEventsToCreate = settings.events_to_create;
+        var loopSize = nEventsToCreate;
+        if(loopSize > settings.maxAdditions) loopSize = settings.maxAdditions;
+        $.each(allEventsToCreate,function(a,eEvent){
+            c++;
+            if(c <= loopSize) {
+                var final = (c==loopSize?true:false);
+                createGoogleEvent(eEvent,a,final);
+            }
+        })
+    }
+    function createGoogleEvent(eEvent,eID,final){
+        var event = {
+          'summary': eEvent.title,
+          'description':eEvent.url,
+          'start': {
+            'date': eEvent.dateFrom,
+            'timeZone': 'Europe/London'
+          },
+          'end': {
+            'date': eEvent.dateTo,
+            'timeZone': 'Europe/London'
+          },
+        };
+        var request = gapi.client.calendar.events.insert({
+            'calendarId': settings.google_calendar_id,
+            'resource': event
+        });
+        request.execute(function(event) {
+            if('error' in event){
+                $('#mResults').append('<br>Errored on event ' + eID + ' from ' + eEvent.dateFrom + ' to ' + eEvent.dateTo + ' called ' + eEvent.title);
+                $('#mResults').append('<br>Just try again as soon as this batch has finished <<<<<<<<<<<<<<<<<<<<<<<<<<');
+            } 
+            else{
+                $('#dEA_count').html(parseInt($('#dEA_count').html())-1);
+                $('#mResults').removeClass('hide').append('<br>Created event ' + eID + ' from ' + eEvent.dateFrom + ' to ' + eEvent.dateTo + ' called ' + eEvent.title);
+                $('#dEA div[data-id="' + eID + '"]').remove();
+                delete settings.events_to_create[eID];
+                if(final){
+                    var nWorklist = Object.keys(settings.events_to_create).length;
+                    var x = settings.maxAdditions;
+                    if(nWorklist < x) x = nWorklist;
+                    if(x==1) {
+                        $('#mCreate').removeClass('hide');
+                        $('#mCreate button').html('Create ' + x + ' event');
+                    }
+                    else if(x> 1) {
+                        $('#mCreate').removeClass('hide');
+                        $('#mCreate button').html('Create ' + x + ' events');
+                    }
+                }
+            }
+        });
+    }
+    function createTextField(iLabel){
+        var counter = $('input').length + 2;
+        var textfield = $('<div />').addClass('mdl-textfield mdl-js-textfield mdl-textfield--floating-label');
+        var input = $('<input />').addClass('mdl-textfield__input tfSetting')
+                                  .attr({type:'text',id:'tfSetting_'+counter,value:iLabel})
+                                  .appendTo(textfield);
+        var label = $('<label />').addClass('mdl-textfield__label')
+                                  .attr({for:'tfSetting_'+counter})
+                                  .html(iLabel)
+                                  .appendTo(textfield);
+        return textfield;
+    }
+    // ====================================================== Message Management
+    function deactivateAllVisibleMessages(){
+        var card = $('#mWait').parent();
+        $('.mdl-card__supporting-text',card).each(function(a,b){
+            var thisMessage = $(this);
+            if(thisMessage.hasClass('active') && !thisMessage.hasClass('hide')) thisMessage.removeClass('active');
+        });
+    }
+</script>
+</body>
+</html>

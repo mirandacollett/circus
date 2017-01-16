@@ -1,0 +1,14 @@
+the client and images folders contain the personalisation for the site. Copy them in and out of the relevant subfolders for dev and testing
+
+Any changes made to /client files may need to be propogated to the other sites
+
+Any changes made the /circus files will need to be distributed to all three sites
+
+
+Hosting Quirks
+
+Dorset Showground
+	$.when(applySettings(),gettingLogonForm()).then... will not work on Dorset Showground.
+	php $_SERVER["DOCUMENT_ROOT"] does not end / (it does on dev), so ensure that usages are like this
+		<?php include $_SERVER["DOCUMENT_ROOT"].'/cookies.php'; ?>
+
